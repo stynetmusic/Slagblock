@@ -1,0 +1,19 @@
+# Build
+build/
+**/Slagblock_artefacts/
+**/CMakeFiles/
+**/CMakeCache.txt
+**/*.xcodeproj/
+**/DerivedData/
+**/xcuserdata/
+**/.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.user
+*.suo
+
+# OS
+.DS_Store
+Thumbs.db
