@@ -2,31 +2,66 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "PluginProcessor.h"
-#include <vector>
 
-/** Soft-synth LookAndFeel: cyan accents, smooth thumbs, subtle hover. */
+//==============================================================================
+// Commercial-grade LookAndFeel (Serum / Vital / Pigments vibe)
+//==============================================================================
 class SlagLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
+    // Palette
+    static constexpr juce::uint32 kBg0      = 0xff0b0b10;
+    static constexpr juce::uint32 kBg1      = 0xff101018;
+    static constexpr juce::uint32 kPanel    = 0xff15151f;
+    static constexpr juce::uint32 kPanelHi  = 0xff1c1c28;
+    static constexpr juce::uint32 kInset    = 0xff0a0a0f;
+    static constexpr juce::uint32 kBorder   = 0xff2a2a3a;
+    static constexpr juce::uint32 kBorderHi = 0xff3d3d52;
+    static constexpr juce::uint32 kText     = 0xffeceaf2;
+    static constexpr juce::uint32 kTextDim  = 0xff8a8798;
+    static constexpr juce::uint32 kTextMute = 0xff5a5768;
+    static constexpr juce::uint32 kCyan     = 0xff2ee6d6;
+    static constexpr juce::uint32 kCyanHi   = 0xff7af5ea;
+    static constexpr juce::uint32 kViolet   = 0xffa78bfa;
+    static constexpr juce::uint32 kOrange   = 0xffff9f43;
+    static constexpr juce::uint32 kTrack    = 0xff1a1a26;
+
     SlagLookAndFeel();
+
+    void drawRotarySlider (juce::Graphics&, int x, int y, int w, int h,
+                           float sliderPosProportional, float rotaryStartAngle,
+                           float rotaryEndAngle, juce::Slider&) override;
 
     void drawLinearSlider (juce::Graphics&, int x, int y, int width, int height,
                            float sliderPos, float minSliderPos, float maxSliderPos,
                            juce::Slider::SliderStyle, juce::Slider&) override;
-
-    void drawRotarySlider (juce::Graphics&, int x, int y, int width, int height,
-                           float sliderPosProportional, float rotaryStartAngle,
-                           float rotaryEndAngle, juce::Slider&) override;
 
     void drawButtonBackground (juce::Graphics&, juce::Button&,
                                const juce::Colour& backgroundColour,
                                bool shouldDrawButtonAsHighlighted,
                                bool shouldDrawButtonAsDown) override;
 
+    void drawToggleButton (juce::Graphics&, juce::ToggleButton&,
+                           bool shouldDrawButtonAsHighlighted,
+                           bool shouldDrawButtonAsDown) override;
+
+    void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
+                       int buttonX, int buttonY, int buttonW, int buttonH,
+                       juce::ComboBox&) override;
+
+    void drawPopupMenuBackground (juce::Graphics&, int width, int height) override;
+    void drawPopupMenuItem (juce::Graphics&, const juce::Rectangle<int>& area,
+                            bool isSeparator, bool isActive, bool isHighlighted,
+                            bool isTicked, bool hasSubMenu,
+                            const juce::String& text, const juce::String& shortcutKeyText,
+                            const juce::Drawable* icon, const juce::Colour* textColour) override;
+
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
     juce::Font getLabelFont (juce::Label&) override;
+    juce::Font getComboBoxFont (juce::ComboBox&) override;
 };
 
+//==============================================================================
 class SlagblockAudioProcessorEditor : public juce::AudioProcessorEditor,
                                       private juce::Timer
 {
@@ -40,123 +75,118 @@ public:
 private:
     void timerCallback() override;
 
-    void setupHSlider (juce::Slider& s, juce::Label& lab, const juce::String& name);
-    void setupKnob (juce::Slider& s, juce::Label& lab, const juce::String& name);
+    void setupKnob   (juce::Slider& s, juce::Label& lab, const juce::String& name);
+    void setupVFader (juce::Slider& s, juce::Label& lab, const juce::String& name);
+    void setupHSlider(juce::Slider& s, juce::Label& lab, const juce::String& name);
     void setupToggle (juce::ToggleButton& b, const juce::String& text);
     void setupButton (juce::TextButton& b, const juce::String& text, bool toggle = false);
-    void setupHeader (juce::Label& lab, const juce::String& text);
+    void setupSectionTitle (juce::Label& lab, const juce::String& text);
 
-    void setFxPanelVisible (bool show);
-    void setImitationPanelVisible (bool show);
-    void updateWindowSize();
-    void syncPanelsFromProcessor();
-    void setFxControlsVisible (bool v);
-    void setImControlsVisible (bool v);
-
-    void layoutHList (juce::Rectangle<int> area,
-                      juce::Slider* const* sliders,
-                      juce::Label* const* labels,
-                      int count);
     void layoutKnobRow (juce::Rectangle<int> area,
                         juce::Slider* const* knobs,
-                        juce::Label* const* labels,
+                        juce::Label*  const* labels,
                         int count);
-    void layoutImitation (juce::Rectangle<int> area);
-    void layoutFxGrid (juce::Rectangle<int> area);
+    void layoutVFaders (juce::Rectangle<int> area,
+                        juce::Slider* const* faders,
+                        juce::Label*  const* labels,
+                        int count);
+    void layoutHRows (juce::Rectangle<int> area,
+                      juce::Slider* const* sliders,
+                      juce::Label*  const* labels,
+                      int count,
+                      int labelW = 78);
+    void layoutShaper (juce::Rectangle<int> area);
 
-    void drawPanel (juce::Graphics& g, juce::Rectangle<int> r);
-    void drawWaveform (juce::Graphics& g, juce::Rectangle<float> r);
-    void drawAdsrShape (juce::Graphics& g, juce::Rectangle<float> r);
+    void drawGlassPanel (juce::Graphics& g, juce::Rectangle<float> r, float radius = 14.0f);
+    void drawInsetWell  (juce::Graphics& g, juce::Rectangle<float> r, float radius = 10.0f);
+    void drawSectionChrome (juce::Graphics& g, juce::Rectangle<float> r,
+                            const juce::String& title, juce::Colour accent);
+    void drawWaveform   (juce::Graphics& g, juce::Rectangle<float> r);
+    void drawSpectrum   (juce::Graphics& g, juce::Rectangle<float> r);
+    void drawEnvMini    (juce::Graphics& g, juce::Rectangle<float> r);
+    void drawTopBar     (juce::Graphics& g, juce::Rectangle<int> r);
+    void drawBottomBar  (juce::Graphics& g, juce::Rectangle<int> r);
 
     float readParam (const char* id, float fallback) const;
-
+    void updateLfoRateEnabled();
+    void syncFromProcessor();
+    void setFxOn (bool on);
+    void setImOn (bool on);
     void savePresetClicked();
     void loadPresetClicked();
 
-    SlagLookAndFeel slagLaf;
-    SlagblockAudioProcessor& audioProcessor;
+    SlagLookAndFeel laf;
+    SlagblockAudioProcessor& proc;
 
-    // Osc / FM
-    juce::Slider ratioSlider, indexSlider, feedbackSlider, driveSlider;
-    juce::Label  ratioLabel, indexLabel, feedbackLabel, driveLabel;
+    // OSC
+    juce::Slider ratioKnob, indexKnob, driveKnob, feedbackKnob;
+    juce::Label  ratioLab, indexLab, driveLab, feedbackLab;
 
-    // Sub
-    juce::Slider subLevelSlider, subOctaveSlider;
-    juce::Label  subLevelLabel, subOctaveLabel;
+    // SUB
+    juce::Slider subLevelKnob, subOctaveKnob;
+    juce::Label  subLevelLab, subOctaveLab;
 
-    // Envelope
-    juce::Slider attackSlider, decaySlider, sustainSlider, releaseSlider;
-    juce::Label  attackLabel, decayLabel, sustainLabel, releaseLabel;
+    // FILTER
+    juce::Slider cutoffKnob, resoKnob, noiseKnob;
+    juce::Label  cutoffLab, resoLab, noiseLab;
 
-    // Filter
-    juce::Slider cutoffSlider, resonanceSlider, noiseSlider;
-    juce::Label  cutoffLabel, resonanceLabel, noiseLabel;
+    // ADSR vertical
+    juce::Slider attackFader, decayFader, sustainFader, releaseFader;
+    juce::Label  attackLab, decayLab, sustainLab, releaseLab;
 
     // LFO
-    juce::Slider lfoRateSlider, lfoCutoffSlider, lfoIndexSlider, lfoDriveSlider, lfoAmpDepthSlider;
-    juce::Label  lfoRateLabel, lfoCutoffLabel, lfoIndexLabel, lfoDriveLabel, lfoAmpDepthLabel;
-    juce::Label  lfoSyncLabel, lfoDivLabel;
-    juce::ToggleButton lfoSyncToggle { "Sync" };
-    juce::ToggleButton lfoToAmpToggle { "→ Amp" };
-    juce::ComboBox lfoDivisionBox;
-
-    // Bottom primary knobs (same params — convenient large controls)
-    juce::Slider knobCutoff, knobReso, knobDrive, knobIndex, knobFeedback, knobSub;
-    juce::Label  knobCutoffLab, knobResoLab, knobDriveLab, knobIndexLab, knobFeedbackLab, knobSubLab;
+    juce::Slider lfoRateKnob, lfoCutKnob, lfoIdxKnob, lfoDrvKnob, lfoAmpKnob;
+    juce::Label  lfoRateLab, lfoCutLab, lfoIdxLab, lfoDrvLab, lfoAmpLab;
+    juce::Label  lfoSyncLab, lfoGridLab;
+    juce::ToggleButton lfoSyncBtn { "SYNC" };
+    juce::ToggleButton lfoAmpBtn  { "AMP" };
+    juce::ComboBox lfoGridBox;
 
     // FX
-    juce::Slider fxDistSlider, fxBitsSlider, fxRateSlider;
-    juce::Slider fxDlyTimeSlider, fxDlyFbSlider, fxDlyMixSlider;
-    juce::Slider fxChoMixSlider, fxChoDepthSlider;
-    juce::Label  fxDistLabel, fxBitsLabel, fxRateLabel;
-    juce::Label  fxDlyTimeLabel, fxDlyFbLabel, fxDlyMixLabel;
-    juce::Label  fxChoMixLabel, fxChoDepthLabel;
+    juce::Slider fxDist, fxBits, fxRate, fxDly, fxDlyFb, fxDlyMix, fxCho, fxChoDep;
+    juce::Label  fxDistLab, fxBitsLab, fxRateLab, fxDlyLab, fxDlyFbLab, fxDlyMixLab, fxChoLab, fxChoDepLab;
 
-    // Imitation
+    // Shaper
     juce::ToggleButton imVolOn, imDriveOn, imTimeOn, imFiltOn, imCrushOn, imNoiseOn, imWidthOn;
-    juce::Slider imVolSlider, imDriveSlider, imTimeSlider, imFiltSlider;
-    juce::Slider imCrushSlider, imNoiseSlider, imWidthSlider;
-    juce::Label  imVolLabel, imDriveLabel, imTimeLabel, imFiltLabel;
-    juce::Label  imCrushLabel, imNoiseLabel, imWidthLabel;
+    juce::Slider imVol, imDrive, imTime, imFilt, imCrush, imNoise, imWidth;
+    juce::Label  imVolLab, imDriveLab, imTimeLab, imFiltLab, imCrushLab, imNoiseLab, imWidthLab;
 
-    juce::Label titleLabel, tagLabel, statusLabel;
-    juce::Label oscHeader, subHeader, envHeader, filterHeader, lfoHeader;
-    juce::Label fxHeader, imHeader, knobsHeader;
+    // Chrome labels
+    juce::Label logoLabel, presetLabel, tagLabel;
+    juce::Label oscTitle, subTitle, filterTitle, envTitle, lfoTitle, fxTitle, shaperTitle;
 
-    juce::TextButton randomButton, fxButton, randomFxButton;
-    juce::TextButton imitationButton, randomImButton;
-    juce::TextButton savePresetButton, loadPresetButton, undoButton, redoButton;
+    // Buttons
+    juce::TextButton btnSave, btnLoad, btnUndo, btnRedo;
+    juce::TextButton btnRandom, btnRandomFx, btnFx, btnShaper, btnRandomIm;
 
-    bool fxPanelVisible = false;
-    bool imPanelVisible = false;
+    bool fxOn = false;
+    bool imOn = false;
 
-    juce::Rectangle<int> leftCol, centerCol, rightCol;
-    juce::Rectangle<int> scopeArea, adsrArea;
-    juce::Rectangle<int> knobsSec, fxSec, imSec;
-    juce::Rectangle<int> headerBar;
+    // Geometry
+    juce::Rectangle<int> topBar, bottomBar;
+    juce::Rectangle<int> oscPanel, subPanel, filterPanel, lfoPanel;
+    juce::Rectangle<int> displayPanel, envPanel, fxPanel, shaperPanel;
+    juce::Rectangle<float> waveArea, spectrumArea, envMiniArea;
 
-    float phaseAnim = 0.0f;
+    float phase = 0.0f;
+    float spectrumPhase = 0.0f;
 
     std::unique_ptr<juce::FileChooser> fileChooser;
 
     using SA = juce::AudioProcessorValueTreeState::SliderAttachment;
     using BA = juce::AudioProcessorValueTreeState::ButtonAttachment;
+    using CA = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
 
-    std::unique_ptr<SA> ratioAtt, indexAtt, driveAtt, feedbackAtt;
-    std::unique_ptr<SA> cutoffAtt, resonanceAtt, noiseAtt;
-    std::unique_ptr<SA> attackAtt, decayAtt, sustainAtt, releaseAtt;
-    std::unique_ptr<SA> subLevelAtt, subOctaveAtt;
-    std::unique_ptr<SA> lfoRateAtt, lfoCutoffAtt, lfoIndexAtt, lfoDriveAtt, lfoAmpDepthAtt;
-    std::unique_ptr<BA> lfoToAmpAtt, lfoSyncAtt;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> lfoDivisionAtt;
-
-    void updateLfoRateEnabled();
-    std::unique_ptr<SA> knobCutoffAtt, knobResoAtt, knoDriveAtt, knobIndexAtt, knobFdbkAtt, knobSubAtt;
-    std::unique_ptr<SA> fxDistAtt, fxBitsAtt, fxRateAtt;
-    std::unique_ptr<SA> fxDlyTimeAtt, fxDlyFbAtt, fxDlyMixAtt, fxChoMixAtt, fxChoDepthAtt;
-    std::unique_ptr<SA> imVolAtt, imDriveAtt, imTimeAtt, imFiltAtt, imCrushAtt, imNoiseAtt, imWidthAtt;
-    std::unique_ptr<BA> imVolOnAtt, imDriveOnAtt, imTimeOnAtt, imFiltOnAtt;
-    std::unique_ptr<BA> imCrushOnAtt, imNoiseOnAtt, imWidthOnAtt;
+    std::unique_ptr<SA> aRatio, aIndex, aDrive, aFeedback;
+    std::unique_ptr<SA> aCut, aReso, aNoise;
+    std::unique_ptr<SA> aAtt, aDec, aSus, aRel;
+    std::unique_ptr<SA> aSubLvl, aSubOct;
+    std::unique_ptr<SA> aLfoRate, aLfoCut, aLfoIdx, aLfoDrv, aLfoAmp;
+    std::unique_ptr<BA> aLfoSync, aLfoToAmp;
+    std::unique_ptr<CA> aLfoGrid;
+    std::unique_ptr<SA> aFxDist, aFxBits, aFxRate, aFxDly, aFxDlyFb, aFxDlyMix, aFxCho, aFxChoDep;
+    std::unique_ptr<SA> aImVol, aImDrive, aImTime, aImFilt, aImCrush, aImNoise, aImWidth;
+    std::unique_ptr<BA> aImVolOn, aImDriveOn, aImTimeOn, aImFiltOn, aImCrushOn, aImNoiseOn, aImWidthOn;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SlagblockAudioProcessorEditor)
 };
