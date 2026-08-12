@@ -4,27 +4,32 @@
 #include "PluginProcessor.h"
 
 //==============================================================================
-// Commercial-grade LookAndFeel (Serum / Vital / Pigments vibe)
+// PHASEDYN LookAndFeel — teal panels, bronze knobs, gold viz (from refer.png)
 //==============================================================================
 class SlagLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    // Palette
-    static constexpr juce::uint32 kBg0      = 0xff0b0b10;
-    static constexpr juce::uint32 kBg1      = 0xff101018;
-    static constexpr juce::uint32 kPanel    = 0xff15151f;
-    static constexpr juce::uint32 kPanelHi  = 0xff1c1c28;
-    static constexpr juce::uint32 kInset    = 0xff0a0a0f;
-    static constexpr juce::uint32 kBorder   = 0xff2a2a3a;
-    static constexpr juce::uint32 kBorderHi = 0xff3d3d52;
-    static constexpr juce::uint32 kText     = 0xffeceaf2;
-    static constexpr juce::uint32 kTextDim  = 0xff8a8798;
-    static constexpr juce::uint32 kTextMute = 0xff5a5768;
-    static constexpr juce::uint32 kCyan     = 0xff2ee6d6;
-    static constexpr juce::uint32 kCyanHi   = 0xff7af5ea;
-    static constexpr juce::uint32 kViolet   = 0xffa78bfa;
-    static constexpr juce::uint32 kOrange   = 0xffff9f43;
-    static constexpr juce::uint32 kTrack    = 0xff1a1a26;
+    // Exact PHASEDYN palette from refer.png
+    static constexpr juce::uint32 kFrame     = 0xff1c1610; // dark brown wood frame
+    static constexpr juce::uint32 kFrameHi   = 0xff2a2218;
+    static constexpr juce::uint32 kHeader    = 0xff241e16;
+    static constexpr juce::uint32 kPanel     = 0xff2f524e; // seafoam teal panel
+    static constexpr juce::uint32 kPanelHi   = 0xff3a625c;
+    static constexpr juce::uint32 kPanelLo   = 0xff274540;
+    static constexpr juce::uint32 kInset     = 0xff1a2e2c;
+    static constexpr juce::uint32 kBorder    = 0xff1a2826;
+    static constexpr juce::uint32 kBorderHi  = 0xff4a7870;
+    static constexpr juce::uint32 kText      = 0xfff0ebe0;
+    static constexpr juce::uint32 kTextDim   = 0xffc4bba8;
+    static constexpr juce::uint32 kTextMute  = 0xff8a8474;
+    static constexpr juce::uint32 kGold      = 0xffc9a84c;
+    static constexpr juce::uint32 kGoldHi    = 0xffe8c86a;
+    static constexpr juce::uint32 kBronze    = 0xff6b4e2e;
+    static constexpr juce::uint32 kBronzeHi  = 0xff8a6a3e;
+    static constexpr juce::uint32 kTealKnob  = 0xff3d8a82; // cyan-teal metal (filter/fx)
+    static constexpr juce::uint32 kTealKnobHi= 0xff5ab0a6;
+    static constexpr juce::uint32 kFaderTrack= 0xff1a2422;
+    static constexpr juce::uint32 kBadge     = 0xff3d3830;
 
     SlagLookAndFeel();
 
@@ -59,6 +64,9 @@ public:
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
     juce::Font getLabelFont (juce::Label&) override;
     juce::Font getComboBoxFont (juce::ComboBox&) override;
+
+    /** ComponentId "teal" → teal metal knobs; default bronze. */
+    static constexpr const char* kTealKnobId = "teal";
 };
 
 //==============================================================================
@@ -75,12 +83,13 @@ public:
 private:
     void timerCallback() override;
 
-    void setupKnob   (juce::Slider& s, juce::Label& lab, const juce::String& name);
+    void setupKnob (juce::Slider& s, juce::Label& lab, const juce::String& name, bool teal = false);
     void setupVFader (juce::Slider& s, juce::Label& lab, const juce::String& name);
-    void setupHSlider(juce::Slider& s, juce::Label& lab, const juce::String& name);
+    void setupHSlider (juce::Slider& s, juce::Label& lab, const juce::String& name);
     void setupToggle (juce::ToggleButton& b, const juce::String& text);
     void setupButton (juce::TextButton& b, const juce::String& text, bool toggle = false);
     void setupSectionTitle (juce::Label& lab, const juce::String& text);
+    void setupBadge (juce::Label& lab, const juce::String& text);
 
     void layoutKnobRow (juce::Rectangle<int> area,
                         juce::Slider* const* knobs,
@@ -90,22 +99,16 @@ private:
                         juce::Slider* const* faders,
                         juce::Label*  const* labels,
                         int count);
-    void layoutHRows (juce::Rectangle<int> area,
-                      juce::Slider* const* sliders,
-                      juce::Label*  const* labels,
-                      int count,
-                      int labelW = 78);
     void layoutShaper (juce::Rectangle<int> area);
 
-    void drawGlassPanel (juce::Graphics& g, juce::Rectangle<float> r, float radius = 14.0f);
-    void drawInsetWell  (juce::Graphics& g, juce::Rectangle<float> r, float radius = 10.0f);
-    void drawSectionChrome (juce::Graphics& g, juce::Rectangle<float> r,
-                            const juce::String& title, juce::Colour accent);
-    void drawWaveform   (juce::Graphics& g, juce::Rectangle<float> r);
-    void drawSpectrum   (juce::Graphics& g, juce::Rectangle<float> r);
-    void drawEnvMini    (juce::Graphics& g, juce::Rectangle<float> r);
-    void drawTopBar     (juce::Graphics& g, juce::Rectangle<int> r);
-    void drawBottomBar  (juce::Graphics& g, juce::Rectangle<int> r);
+    void drawPanel (juce::Graphics& g, juce::Rectangle<float> r, bool active = true);
+    void drawInset (juce::Graphics& g, juce::Rectangle<float> r, float radius = 8.0f);
+    void drawWaveform (juce::Graphics& g, juce::Rectangle<float> r);
+    void drawSpectrum (juce::Graphics& g, juce::Rectangle<float> r);
+    void drawEnvShape (juce::Graphics& g, juce::Rectangle<float> r);
+    void drawFilterCurve (juce::Graphics& g, juce::Rectangle<float> r);
+    void drawHeader (juce::Graphics& g, juce::Rectangle<int> r);
+    void drawFooter (juce::Graphics& g, juce::Rectangle<int> r);
 
     float readParam (const char* id, float fallback) const;
     void updateLfoRateEnabled();
@@ -118,19 +121,19 @@ private:
     SlagLookAndFeel laf;
     SlagblockAudioProcessor& proc;
 
-    // OSC
+    // FM Osc
     juce::Slider ratioKnob, indexKnob, driveKnob, feedbackKnob;
     juce::Label  ratioLab, indexLab, driveLab, feedbackLab;
 
-    // SUB
+    // Sub
     juce::Slider subLevelKnob, subOctaveKnob;
     juce::Label  subLevelLab, subOctaveLab;
 
-    // FILTER
+    // Filter — large teal cutoff
     juce::Slider cutoffKnob, resoKnob, noiseKnob;
     juce::Label  cutoffLab, resoLab, noiseLab;
 
-    // ADSR vertical
+    // ADSR
     juce::Slider attackFader, decayFader, sustainFader, releaseFader;
     juce::Label  attackLab, decayLab, sustainLab, releaseLab;
 
@@ -138,11 +141,11 @@ private:
     juce::Slider lfoRateKnob, lfoCutKnob, lfoIdxKnob, lfoDrvKnob, lfoAmpKnob;
     juce::Label  lfoRateLab, lfoCutLab, lfoIdxLab, lfoDrvLab, lfoAmpLab;
     juce::Label  lfoSyncLab, lfoGridLab;
-    juce::ToggleButton lfoSyncBtn { "SYNC" };
-    juce::ToggleButton lfoAmpBtn  { "AMP" };
+    juce::ToggleButton lfoSyncBtn { "Sync" };
+    juce::ToggleButton lfoAmpBtn  { "Amp" };
     juce::ComboBox lfoGridBox;
 
-    // FX
+    // FX — teal knobs like reference
     juce::Slider fxDist, fxBits, fxRate, fxDly, fxDlyFb, fxDlyMix, fxCho, fxChoDep;
     juce::Label  fxDistLab, fxBitsLab, fxRateLab, fxDlyLab, fxDlyFbLab, fxDlyMixLab, fxChoLab, fxChoDepLab;
 
@@ -151,22 +154,20 @@ private:
     juce::Slider imVol, imDrive, imTime, imFilt, imCrush, imNoise, imWidth;
     juce::Label  imVolLab, imDriveLab, imTimeLab, imFiltLab, imCrushLab, imNoiseLab, imWidthLab;
 
-    // Chrome labels
-    juce::Label logoLabel, presetLabel, tagLabel;
-    juce::Label oscTitle, subTitle, filterTitle, envTitle, lfoTitle, fxTitle, shaperTitle;
+    juce::Label logoLabel, tagLabel, presetLabel;
+    juce::Label oscTitle, subTitle, filterTitle, envTitle, lfoTitle, fxTitle, shaperTitle, vizTitle;
+    juce::Label oscBadge, subBadge, filterBadge, envBadge, lfoBadge, fxBadge, shaperBadge, vizBadge;
 
-    // Buttons
     juce::TextButton btnSave, btnLoad, btnUndo, btnRedo;
     juce::TextButton btnRandom, btnRandomFx, btnFx, btnShaper, btnRandomIm;
 
     bool fxOn = false;
     bool imOn = false;
 
-    // Geometry
     juce::Rectangle<int> topBar, bottomBar;
-    juce::Rectangle<int> oscPanel, subPanel, filterPanel, lfoPanel;
-    juce::Rectangle<int> displayPanel, envPanel, fxPanel, shaperPanel;
-    juce::Rectangle<float> waveArea, spectrumArea, envMiniArea;
+    juce::Rectangle<int> oscPanel, subPanel, filterPanel, envPanel, lfoPanel;
+    juce::Rectangle<int> vizPanel, fxPanel, shaperPanel;
+    juce::Rectangle<float> waveArea, spectrumArea, envShapeArea, filterCurveArea;
 
     float phase = 0.0f;
     float spectrumPhase = 0.0f;
