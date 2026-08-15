@@ -59,6 +59,13 @@ SlagblockAudioProcessor::SlagblockAudioProcessor()
     imWidthOnParam = apvts.getRawParameterValue (paramImWidthOn);
     imWidthParam   = apvts.getRawParameterValue (paramImWidth);
 
+    autoOnParam    = apvts.getRawParameterValue (paramAutoOn);
+    autoSpeedParam = apvts.getRawParameterValue (paramAutoSpeed);
+    autoDepthParam = apvts.getRawParameterValue (paramAutoDepth);
+    autoChaosParam = apvts.getRawParameterValue (paramAutoChaos);
+
+    chaos.bind (apvts);
+
     // Seed undo history with default state
     lastPushedState = captureState();
     undoStack.push_back (lastPushedState.createCopy());
@@ -488,6 +495,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout SlagblockAudioProcessor::cre
     addBool  (paramImWidthOn, "Im Width On", false);
     addFloat (paramImWidth, "Im Width", juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.55f);
 
+    // Auto / chaos motion — high defaults so flipping Auto instantly animates the patch
+    addBool  (paramAutoOn,    "Auto",        false);
+    addFloat (paramAutoSpeed, "Auto Rate",   juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.48f);
+    addFloat (paramAutoDepth, "Auto Depth",  juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.78f);
+    addFloat (paramAutoChaos, "Auto Chaos",  juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.62f);
+
     return { params.begin(), params.end() };
 }
 
@@ -496,6 +509,7 @@ void SlagblockAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     engine.prepare (sampleRate);
     fx.prepare (sampleRate, samplesPerBlock);
     imitation.prepare (sampleRate, samplesPerBlock);
+    chaos.prepare (sampleRate);
 
     lfoScratch.assign (static_cast<size_t> (juce::jmax (1, samplesPerBlock)), 0.0f);
     // ~20 ms smooth for amp enable (click-free toggle)
@@ -519,30 +533,94 @@ bool SlagblockAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts
     return true;
 }
 
+float SlagblockAudioProcessor::getEffectiveParam (const char* id, float fallback) const
+{
+    if (id == nullptr)
+        return fallback;
+
+    if (chaos.isAudible() && chaos.hasTargetId (id))
+        return chaos.getLiveById (id, fallback);
+
+    if (auto* p = apvts.getRawParameterValue (id))
+        return p->load();
+
+    return fallback;
+}
+
+bool SlagblockAudioProcessor::isAutoOn() const noexcept
+{
+    return autoOnParam != nullptr && autoOnParam->load() > 0.5f;
+}
+
+float SlagblockAudioProcessor::getStoredParam01 (const char* id, float fallback) const
+{
+    if (id == nullptr)
+        return fallback;
+
+    if (auto* p = apvts.getParameter (id))
+        return p->getValue();
+
+    return fallback;
+}
+
+void SlagblockAudioProcessor::tickAutoVisual (float dtSeconds)
+{
+    const auto now = juce::Time::getMillisecondCounter();
+    if (now - lastAudioProcessMs.load (std::memory_order_relaxed) < 80)
+        return;
+
+    const bool autoWanted = isAutoOn();
+    chaos.setControls (autoWanted,
+                       autoSpeedParam != nullptr ? autoSpeedParam->load() : 0.48f,
+                       autoDepthParam != nullptr ? autoDepthParam->load() : 0.78f,
+                       autoChaosParam != nullptr ? autoChaosParam->load() : 0.62f);
+    chaos.advanceSeconds (dtSeconds);
+    chaos.snapshotLive();
+}
+
 void SlagblockAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
 
     buffer.clear();
 
-    engine.setRatio           (ratioParam     != nullptr ? ratioParam->load()     : 2.01f);
-    engine.setIndex           (indexParam     != nullptr ? indexParam->load()     : 11.0f);
-    engine.setDrive           (driveParam     != nullptr ? driveParam->load()     : 7.5f);
-    engine.setFeedback        (feedbackParam  != nullptr ? feedbackParam->load()  : 0.55f);
-    engine.setFilterCutoff    (cutoffParam    != nullptr ? cutoffParam->load()    : 2400.0f);
-    engine.setFilterResonance (resonanceParam != nullptr ? resonanceParam->load() : 0.45f);
-    engine.setNoiseAmount     (noiseParam     != nullptr ? noiseParam->load()     : 0.12f);
-    engine.setAttack          (attackParam    != nullptr ? attackParam->load()    : 0.001f);
-    engine.setDecay           (decayParam     != nullptr ? decayParam->load()     : 0.05f);
-    engine.setSustain         (sustainParam   != nullptr ? sustainParam->load()   : 0.58f);
-    engine.setRelease         (releaseParam   != nullptr ? releaseParam->load()   : 0.08f);
+    using CM = slagblock::ChaosMotion;
 
-    engine.setSubLevel  (subLevelParam  != nullptr ? subLevelParam->load()  : 0.55f);
-    engine.setSubOctave (subOctaveParam != nullptr ? static_cast<int> (subOctaveParam->load() + 0.5f) : 1);
-    // LFO rate: free Hz or host-tempo musical grid
+    const bool autoWanted = autoOnParam != nullptr && autoOnParam->load() > 0.5f;
+    chaos.setControls (autoWanted,
+                       autoSpeedParam != nullptr ? autoSpeedParam->load() : 0.48f,
+                       autoDepthParam != nullptr ? autoDepthParam->load() : 0.78f,
+                       autoChaosParam != nullptr ? autoChaosParam->load() : 0.62f);
+    chaos.advance (buffer.getNumSamples());
+    lastAudioProcessMs.store (juce::Time::getMillisecondCounter(), std::memory_order_relaxed);
+    const bool autoLive = chaos.isAudible();
+
+    auto base = [] (std::atomic<float>* p, float d) { return p != nullptr ? p->load() : d; };
+    auto live = [this] (CM::Target t, std::atomic<float>* p, float d)
     {
-        const bool syncOn = lfoSyncParam != nullptr && lfoSyncParam->load() > 0.5f;
-        float rateHz = lfoRateParam != nullptr ? lfoRateParam->load() : 0.45f;
+        return chaos.modulate (t, p != nullptr ? p->load() : d);
+    };
+
+    engine.setRatio           (live (CM::Ratio,     ratioParam,     2.01f));
+    engine.setIndex           (live (CM::Index,     indexParam,     11.0f));
+    engine.setDrive           (live (CM::Drive,     driveParam,     7.5f));
+    engine.setFeedback        (live (CM::Feedback,  feedbackParam,  0.55f));
+    engine.setFilterCutoff    (live (CM::Cutoff,    cutoffParam,    2400.0f));
+    engine.setFilterResonance (live (CM::Resonance, resonanceParam, 0.45f));
+    engine.setNoiseAmount     (live (CM::Noise,     noiseParam,     0.12f));
+    engine.setAttack          (base (attackParam,  0.001f));
+    engine.setDecay           (base (decayParam,   0.05f));
+    engine.setSustain         (base (sustainParam, 0.58f));
+    engine.setRelease         (base (releaseParam, 0.08f));
+
+    engine.setSubLevel  (live (CM::SubLevel, subLevelParam, 0.55f));
+    engine.setSubOctave (subOctaveParam != nullptr ? static_cast<int> (subOctaveParam->load() + 0.5f) : 1);
+    // LFO rate: free Hz or host-tempo musical grid.
+    // Auto drives the free-rate path so the LFO itself wanders.
+    {
+        const bool syncOn = ! autoLive
+                         && lfoSyncParam != nullptr && lfoSyncParam->load() > 0.5f;
+        float rateHz = live (CM::LfoRate, lfoRateParam, 0.45f);
 
         if (syncOn)
         {
@@ -573,40 +651,41 @@ void SlagblockAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         engine.setLfoRate (rateHz);
     }
 
-    engine.setLfoToCutoff (lfoCutoffParam != nullptr ? lfoCutoffParam->load() : 0.0f);
-    engine.setLfoToIndex  (lfoIndexParam  != nullptr ? lfoIndexParam->load()  : 0.0f);
-    engine.setLfoToDrive  (lfoDriveParam  != nullptr ? lfoDriveParam->load()  : 0.0f);
+    engine.setLfoToCutoff (live (CM::LfoCutoff, lfoCutoffParam, 0.0f));
+    engine.setLfoToIndex  (live (CM::LfoIndex,  lfoIndexParam,  0.0f));
+    engine.setLfoToDrive  (live (CM::LfoDrive,  lfoDriveParam,  0.0f));
 
-    const bool fxOn = fxOnParam != nullptr && fxOnParam->load() > 0.5f;
+    const bool fxManual = fxOnParam != nullptr && fxOnParam->load() > 0.5f;
+    const bool fxOn = fxManual || autoLive;
     fx.setEnabled (fxOn);
 
     if (fxOn)
     {
-        fx.setDistortion   (fxDistParam        != nullptr ? fxDistParam->load()        : 0.55f);
-        fx.setCrushBits    (fxCrushBitsParam   != nullptr ? fxCrushBitsParam->load()   : 9.0f);
-        fx.setCrushRate    (fxCrushRateParam   != nullptr ? fxCrushRateParam->load()   : 0.38f);
-        fx.setDelayTimeMs  (fxDelayTimeParam   != nullptr ? fxDelayTimeParam->load()   : 118.0f);
-        fx.setDelayFeedback(fxDelayFbParam     != nullptr ? fxDelayFbParam->load()     : 0.30f);
-        fx.setDelayMix     (fxDelayMixParam    != nullptr ? fxDelayMixParam->load()    : 0.20f);
-        fx.setChorusMix    (fxChorusMixParam   != nullptr ? fxChorusMixParam->load()   : 0.28f);
-        fx.setChorusDepth  (fxChorusDepthParam != nullptr ? fxChorusDepthParam->load() : 0.45f);
+        fx.setDistortion   (live (CM::FxDist,        fxDistParam,        0.55f));
+        fx.setCrushBits    (live (CM::FxCrushBits,   fxCrushBitsParam,   9.0f));
+        fx.setCrushRate    (live (CM::FxCrushRate,   fxCrushRateParam,   0.38f));
+        fx.setDelayTimeMs  (live (CM::FxDelayTime,   fxDelayTimeParam,   118.0f));
+        fx.setDelayFeedback(live (CM::FxDelayFb,     fxDelayFbParam,     0.30f));
+        fx.setDelayMix     (live (CM::FxDelayMix,    fxDelayMixParam,    0.20f));
+        fx.setChorusMix    (live (CM::FxChorusMix,   fxChorusMixParam,   0.28f));
+        fx.setChorusDepth  (live (CM::FxChorusDepth, fxChorusDepthParam, 0.45f));
     }
 
-    const bool imOn = imOnParam != nullptr && imOnParam->load() > 0.5f;
+    const bool imManual = imOnParam != nullptr && imOnParam->load() > 0.5f;
+    const bool imOn = imManual || autoLive;
     imitation.setRackEnabled (imOn);
 
     if (imOn)
     {
         auto on = [] (std::atomic<float>* p) { return p != nullptr && p->load() > 0.5f; };
-        auto val = [] (std::atomic<float>* p, float d) { return p != nullptr ? p->load() : d; };
-
-        imitation.setVolume (on (imVolOnParam),   val (imVolParam,   0.55f));
-        imitation.setDrive  (on (imDriveOnParam), val (imDriveParam, 0.50f));
-        imitation.setTime   (on (imTimeOnParam),  val (imTimeParam,  0.40f));
-        imitation.setFilter (on (imFiltOnParam),  val (imFiltParam,  0.35f));
-        imitation.setCrush  (on (imCrushOnParam), val (imCrushParam, 0.40f));
-        imitation.setNoise  (on (imNoiseOnParam), val (imNoiseParam, 0.20f));
-        imitation.setWidth  (on (imWidthOnParam), val (imWidthParam, 0.55f));
+        const bool force = autoLive;
+        imitation.setVolume (force || on (imVolOnParam),   live (CM::ImVol,   imVolParam,   0.55f));
+        imitation.setDrive  (force || on (imDriveOnParam), live (CM::ImDrive, imDriveParam, 0.50f));
+        imitation.setTime   (force || on (imTimeOnParam),  live (CM::ImTime,  imTimeParam,  0.40f));
+        imitation.setFilter (force || on (imFiltOnParam),  live (CM::ImFilt,  imFiltParam,  0.35f));
+        imitation.setCrush  (force || on (imCrushOnParam), live (CM::ImCrush, imCrushParam, 0.40f));
+        imitation.setNoise  (force || on (imNoiseOnParam), live (CM::ImNoise, imNoiseParam, 0.20f));
+        imitation.setWidth  (force || on (imWidthOnParam), live (CM::ImWidth, imWidthParam, 0.55f));
     }
 
     const int numSamples = buffer.getNumSamples();
@@ -649,9 +728,10 @@ void SlagblockAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         imitation.process (left, right, numSamples);
 
     // ---- LFO → Amp on final output gain (after osc / filter / drive / FX / imitation) ----
-    const bool ampOn = lfoToAmpParam != nullptr && lfoToAmpParam->load() > 0.5f;
-    const float depth = juce::jlimit (0.0f, 1.0f,
-                                      lfoAmpDepthParam != nullptr ? lfoAmpDepthParam->load() : 0.0f);
+    const float ampDepthLive = live (CM::LfoAmp, lfoAmpDepthParam, 0.35f);
+    const bool ampOn = (lfoToAmpParam != nullptr && lfoToAmpParam->load() > 0.5f)
+                    || (autoLive && ampDepthLive > 0.02f);
+    const float depth = juce::jlimit (0.0f, 1.0f, ampDepthLive);
     const float enableTarget = ampOn ? 1.0f : 0.0f;
     const float coef = ampEnableCoef > 0.0f ? ampEnableCoef : 0.05f;
 

@@ -4,6 +4,7 @@
 #include "engine/FMEngine.h"
 #include "engine/NeuroFX.h"
 #include "engine/ShaperImitation.h"
+#include "engine/ChaosMotion.h"
 #include <vector>
 #include <functional>
 
@@ -46,6 +47,22 @@ public:
     void randomizeImitationOnly();
     void setFxProcessingEnabled (bool shouldEnable);
     void setImitationEnabled (bool shouldEnable);
+
+    /** True while Auto is fading in/out or fully on (sound is being driven). */
+    bool isAutoAudible() const noexcept { return chaos.isAudible(); }
+    /** True if the Auto button/parameter is engaged (may still be fading). */
+    bool isAutoOn() const noexcept;
+    /** 0–1 Auto mix, for header glow. */
+    float getAutoMix() const noexcept { return chaos.getMix(); }
+    /** Live (modulated if Auto is on) value for GUI viz / knob markers. */
+    float getEffectiveParam (const char* id, float fallback) const;
+    /** Stored (unmodulated) 0–1 value — the knob's parked centre. */
+    float getStoredParam01 (const char* id, float fallback = 0.0f) const;
+    /**
+     * Keep chaotic walkers moving when the host is not calling processBlock
+     * (editor open, transport stopped). No-op if audio just ran.
+     */
+    void tickAutoVisual (float dtSeconds);
 
     // --- Presets ---
     static juce::File getPresetsDirectory();
@@ -121,6 +138,11 @@ public:
     static constexpr const char* paramImWidthOn   = "imWidthOn";
     static constexpr const char* paramImWidth     = "imWidth";
 
+    static constexpr const char* paramAutoOn    = "autoOn";
+    static constexpr const char* paramAutoSpeed = "autoSpeed";
+    static constexpr const char* paramAutoDepth = "autoDepth";
+    static constexpr const char* paramAutoChaos = "autoChaos";
+
 private:
     void setParamFloat (const char* id, float value);
     void setParamBool  (const char* id, bool value);
@@ -132,6 +154,7 @@ private:
     slagblock::FMEngine engine;
     slagblock::NeuroFX fx;
     slagblock::ShaperImitation imitation;
+    slagblock::ChaosMotion chaos;
 
     // Full-state undo/redo
     static constexpr int maxUndoSteps = 64;
@@ -195,6 +218,13 @@ private:
     std::atomic<float>* imNoiseParam   = nullptr;
     std::atomic<float>* imWidthOnParam = nullptr;
     std::atomic<float>* imWidthParam   = nullptr;
+
+    std::atomic<float>* autoOnParam    = nullptr;
+    std::atomic<float>* autoSpeedParam = nullptr;
+    std::atomic<float>* autoDepthParam = nullptr;
+    std::atomic<float>* autoChaosParam = nullptr;
+
+    std::atomic<juce::int64> lastAudioProcessMs { 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SlagblockAudioProcessor)
 };

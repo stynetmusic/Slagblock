@@ -33,7 +33,7 @@ namespace Layout
     constexpr int H = 780;
     constexpr int pad = 12;
     constexpr int gap = 10;
-    constexpr int topH = 72;
+    constexpr int topH = 96;
     constexpr int botH = 52;
 }
 
@@ -228,6 +228,25 @@ void SlagLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& but
     const bool on = button.getToggleState();
     auto bg = backgroundColour;
 
+    const bool isAuto = button.getComponentID() == kAutoBtnId;
+
+    if (isAuto)
+    {
+        auto fill = on ? Col::gold : Col::badge.brighter (0.08f);
+        if (down) fill = fill.brighter (0.08f);
+        else if (highlighted) fill = fill.brighter (0.10f);
+
+        {
+            juce::ColourGradient gr (fill.brighter (on ? 0.18f : 0.06f), r.getX(), r.getY(),
+                                     fill.darker (on ? 0.08f : 0.18f), r.getX(), r.getBottom(), false);
+            g.setGradientFill (gr);
+            g.fillRoundedRectangle (r, 8.0f);
+        }
+        g.setColour (on ? Col::goldHi : Col::gold.withAlpha (highlighted ? 0.75f : 0.45f));
+        g.drawRoundedRectangle (r, 8.0f, on ? 2.0f : 1.4f);
+        return;
+    }
+
     if (on) bg = Col::gold.withAlpha (0.22f);
     else if (down) bg = bg.brighter (0.1f);
     else if (highlighted) bg = bg.brighter (0.06f);
@@ -380,6 +399,10 @@ SlagblockAudioProcessorEditor::SlagblockAudioProcessorEditor (SlagblockAudioProc
     setupButton (btnFx, "FX", true);
     setupButton (btnShaper, "Imitation", true);
     setupButton (btnRandomIm, "Rand IM");
+    setupButton (btnAuto, "AUTO", true);
+    btnAuto.setComponentID (SlagLookAndFeel::kAutoBtnId);
+    btnAuto.setColour (juce::TextButton::textColourOffId, Col::goldHi);
+    btnAuto.setColour (juce::TextButton::textColourOnId, Col::frame);
 
     btnRandom.onClick   = [this] { proc.randomizeNeuroPatch(); };
     btnRandomFx.onClick = [this] {
@@ -459,6 +482,10 @@ SlagblockAudioProcessorEditor::SlagblockAudioProcessorEditor (SlagblockAudioProc
     setupHSlider (imNoise, imNoiseLab, "Noise");
     setupHSlider (imWidth, imWidthLab, "Width");
 
+    setupKnob (autoSpeedKnob, autoSpeedLab, "Speed");
+    setupKnob (autoDepthKnob, autoDepthLab, "Depth");
+    setupKnob (autoChaosKnob, autoChaosLab, "Chaos");
+
     auto& ap = proc.getAPVTS();
     using P = SlagblockAudioProcessor;
 
@@ -507,6 +534,11 @@ SlagblockAudioProcessorEditor::SlagblockAudioProcessorEditor (SlagblockAudioProc
     aImCrushOn = std::make_unique<BA> (ap, P::paramImCrushOn, imCrushOn);
     aImNoiseOn = std::make_unique<BA> (ap, P::paramImNoiseOn, imNoiseOn);
     aImWidthOn = std::make_unique<BA> (ap, P::paramImWidthOn, imWidthOn);
+
+    aAutoOn    = std::make_unique<BA> (ap, P::paramAutoOn,    btnAuto);
+    aAutoSpeed = std::make_unique<SA> (ap, P::paramAutoSpeed, autoSpeedKnob);
+    aAutoDepth = std::make_unique<SA> (ap, P::paramAutoDepth, autoDepthKnob);
+    aAutoChaos = std::make_unique<SA> (ap, P::paramAutoChaos, autoChaosKnob);
 
     updateLfoRateEnabled();
 
@@ -560,6 +592,26 @@ void SlagblockAudioProcessorEditor::timerCallback()
     if (! vizPanel.isEmpty()) repaint (vizPanel.expanded (2));
     if (! envPanel.isEmpty()) repaint (envPanel.expanded (2));
     if (! filterPanel.isEmpty()) repaint (filterPanel.expanded (2));
+
+    const bool autoOn = proc.isAutoOn();
+    const bool autoLive = proc.isAutoAudible();
+    if (autoOn || autoLive)
+        proc.tickAutoVisual (0.025f);
+
+    applyLiveVisuals();
+
+    if (autoLive || lastAutoAudible)
+    {
+        if (! autoCluster.isEmpty())
+            repaint (autoCluster.expanded (12));
+        repaint (oscPanel);
+        repaint (filterPanel);
+        repaint (fxPanel);
+        repaint (lfoPanel);
+        repaint (subPanel);
+        repaint (shaperPanel);
+    }
+    lastAutoAudible = autoLive;
 }
 
 void SlagblockAudioProcessorEditor::setupSectionTitle (juce::Label& lab, const juce::String& text)
@@ -649,7 +701,8 @@ void SlagblockAudioProcessorEditor::setupButton (juce::TextButton& b, const juce
 
 void SlagblockAudioProcessorEditor::updateLfoRateEnabled()
 {
-    const bool sync = lfoSyncBtn.getToggleState();
+    const bool autoLive = proc.isAutoAudible();
+    const bool sync = lfoSyncBtn.getToggleState() && ! autoLive;
     lfoRateKnob.setEnabled (! sync);
     lfoRateLab.setEnabled (! sync);
     lfoGridBox.setEnabled (sync);
@@ -658,9 +711,112 @@ void SlagblockAudioProcessorEditor::updateLfoRateEnabled()
 
 float SlagblockAudioProcessorEditor::readParam (const char* id, float fallback) const
 {
-    if (auto* p = proc.getAPVTS().getRawParameterValue (id))
-        return p->load();
-    return fallback;
+    return proc.getEffectiveParam (id, fallback);
+}
+
+bool SlagblockAudioProcessorEditor::isSliderDragged (const juce::Slider& s) const noexcept
+{
+    return s.getThumbBeingDragged() >= 0 || s.isMouseButtonDown();
+}
+
+void SlagblockAudioProcessorEditor::applyLiveVisuals()
+{
+    using P = SlagblockAudioProcessor;
+    const bool live = proc.isAutoAudible();
+
+    struct Item { juce::Slider* slider; const char* id; };
+    const Item items[] = {
+        { &ratioKnob,    P::paramRatio },
+        { &indexKnob,    P::paramIndex },
+        { &driveKnob,    P::paramDrive },
+        { &feedbackKnob, P::paramFeedback },
+        { &subLevelKnob, P::paramSubLevel },
+        { &cutoffKnob,   P::paramCutoff },
+        { &resoKnob,     P::paramResonance },
+        { &noiseKnob,    P::paramNoise },
+        { &lfoRateKnob,  P::paramLfoRate },
+        { &lfoCutKnob,   P::paramLfoCutoff },
+        { &lfoIdxKnob,   P::paramLfoIndex },
+        { &lfoDrvKnob,   P::paramLfoDrive },
+        { &lfoAmpKnob,   P::paramLfoAmpDepth },
+        { &fxDist,       P::paramFxDist },
+        { &fxBits,       P::paramFxCrushBits },
+        { &fxRate,       P::paramFxCrushRate },
+        { &fxDly,        P::paramFxDelayTime },
+        { &fxDlyFb,      P::paramFxDelayFb },
+        { &fxDlyMix,     P::paramFxDelayMix },
+        { &fxCho,        P::paramFxChorusMix },
+        { &fxChoDep,     P::paramFxChorusDepth },
+        { &imVol,        P::paramImVol },
+        { &imDrive,      P::paramImDrive },
+        { &imTime,       P::paramImTime },
+        { &imFilt,       P::paramImFilt },
+        { &imCrush,      P::paramImCrush },
+        { &imNoise,      P::paramImNoise },
+        { &imWidth,      P::paramImWidth }
+    };
+
+    if (! live)
+    {
+        if (lastAutoAudible)
+            restoreStoredVisuals();
+        return;
+    }
+
+    for (const auto& it : items)
+    {
+        if (it.slider == nullptr || isSliderDragged (*it.slider))
+            continue;
+        const float v = proc.getEffectiveParam (it.id, (float) it.slider->getValue());
+        if (std::abs ((float) it.slider->getValue() - v) > 1.0e-5f)
+            it.slider->setValue (v, juce::dontSendNotification);
+    }
+}
+
+void SlagblockAudioProcessorEditor::restoreStoredVisuals()
+{
+    using P = SlagblockAudioProcessor;
+    auto& ap = proc.getAPVTS();
+
+    struct Item { juce::Slider* slider; const char* id; };
+    const Item items[] = {
+        { &ratioKnob,    P::paramRatio },
+        { &indexKnob,    P::paramIndex },
+        { &driveKnob,    P::paramDrive },
+        { &feedbackKnob, P::paramFeedback },
+        { &subLevelKnob, P::paramSubLevel },
+        { &cutoffKnob,   P::paramCutoff },
+        { &resoKnob,     P::paramResonance },
+        { &noiseKnob,    P::paramNoise },
+        { &lfoRateKnob,  P::paramLfoRate },
+        { &lfoCutKnob,   P::paramLfoCutoff },
+        { &lfoIdxKnob,   P::paramLfoIndex },
+        { &lfoDrvKnob,   P::paramLfoDrive },
+        { &lfoAmpKnob,   P::paramLfoAmpDepth },
+        { &fxDist,       P::paramFxDist },
+        { &fxBits,       P::paramFxCrushBits },
+        { &fxRate,       P::paramFxCrushRate },
+        { &fxDly,        P::paramFxDelayTime },
+        { &fxDlyFb,      P::paramFxDelayFb },
+        { &fxDlyMix,     P::paramFxDelayMix },
+        { &fxCho,        P::paramFxChorusMix },
+        { &fxChoDep,     P::paramFxChorusDepth },
+        { &imVol,        P::paramImVol },
+        { &imDrive,      P::paramImDrive },
+        { &imTime,       P::paramImTime },
+        { &imFilt,       P::paramImFilt },
+        { &imCrush,      P::paramImCrush },
+        { &imNoise,      P::paramImNoise },
+        { &imWidth,      P::paramImWidth }
+    };
+
+    for (const auto& it : items)
+    {
+        if (it.slider == nullptr || isSliderDragged (*it.slider))
+            continue;
+        if (auto* p = ap.getRawParameterValue (it.id))
+            it.slider->setValue (p->load(), juce::dontSendNotification);
+    }
 }
 
 // ============================================================================
@@ -1012,13 +1168,15 @@ void SlagblockAudioProcessorEditor::drawHeader (juce::Graphics& g, juce::Rectang
     g.setGradientFill (gr);
     g.fillRect (r);
 
-    // Preset name pill (like Veridian Emerald Edition bar)
-    auto pill = juce::Rectangle<float> ((float) r.getCentreX() - 130.0f,
-                                        (float) r.getY() + 20.0f, 260.0f, 28.0f);
-    g.setColour (Col::inset);
-    g.fillRoundedRectangle (pill, 8.0f);
-    g.setColour (Col::borderHi.withAlpha (0.4f));
-    g.drawRoundedRectangle (pill, 8.0f, 1.0f);
+    // Preset name pill — follow the label so it doesn't collide with Auto
+    auto pill = presetLabel.getBounds().toFloat().reduced (8.0f, 4.0f);
+    if (pill.getWidth() > 40.0f)
+    {
+        g.setColour (Col::inset);
+        g.fillRoundedRectangle (pill, 8.0f);
+        g.setColour (Col::borderHi.withAlpha (0.4f));
+        g.drawRoundedRectangle (pill, 8.0f, 1.0f);
+    }
 
     g.setColour (Col::bronze.withAlpha (0.5f));
     g.fillRect (r.getX(), r.getBottom() - 2, r.getWidth(), 2);
@@ -1049,14 +1207,16 @@ void SlagblockAudioProcessorEditor::paint (juce::Graphics& g)
     drawHeader (g, topBar);
     drawFooter (g, bottomBar);
 
+    const bool autoLive = proc.isAutoAudible();
+
     drawPanel (g, oscPanel.toFloat());
     drawPanel (g, subPanel.toFloat());
     drawPanel (g, filterPanel.toFloat());
     drawPanel (g, envPanel.toFloat());
     drawPanel (g, lfoPanel.toFloat());
     drawPanel (g, vizPanel.toFloat());
-    drawPanel (g, fxPanel.toFloat(), fxOn);
-    drawPanel (g, shaperPanel.toFloat(), imOn);
+    drawPanel (g, fxPanel.toFloat(), fxOn || autoLive);
+    drawPanel (g, shaperPanel.toFloat(), imOn || autoLive);
 
     // Badge backgrounds (small dark chips)
     auto paintBadge = [&] (juce::Label& b)
@@ -1076,15 +1236,144 @@ void SlagblockAudioProcessorEditor::paint (juce::Graphics& g)
     if (! envShapeArea.isEmpty()) drawEnvShape (g, envShapeArea);
     if (! filterCurveArea.isEmpty()) drawFilterCurve (g, filterCurveArea);
 
-    if (! fxOn && ! fxPanel.isEmpty())
+    if (! fxOn && ! autoLive && ! fxPanel.isEmpty())
     {
         g.setColour (juce::Colours::black.withAlpha (0.32f));
         g.fillRoundedRectangle (fxPanel.toFloat(), 12.0f);
     }
-    if (! imOn && ! shaperPanel.isEmpty())
+    if (! imOn && ! autoLive && ! shaperPanel.isEmpty())
     {
         g.setColour (juce::Colours::black.withAlpha (0.32f));
         g.fillRoundedRectangle (shaperPanel.toFloat(), 12.0f);
+    }
+
+    if (! autoCluster.isEmpty())
+    {
+        auto r = autoCluster.toFloat().expanded (6.0f, 4.0f);
+        const float mix = proc.getAutoMix();
+        g.setColour (Col::inset.withAlpha (0.65f + mix * 0.20f));
+        g.fillRoundedRectangle (r, 10.0f);
+        g.setColour (Col::gold.withAlpha (0.22f + mix * 0.55f));
+        g.drawRoundedRectangle (r, 10.0f, mix > 0.05f ? 1.6f : 1.0f);
+    }
+}
+
+void SlagblockAudioProcessorEditor::drawLiveKnobMarker (juce::Graphics& g, const juce::Slider& s, float live01) const
+{
+    if (! s.isVisible() || s.getWidth() < 8 || s.getHeight() < 8)
+        return;
+
+    const auto b = s.getBounds().toFloat();
+    const float w = b.getWidth();
+    const float h = b.getHeight();
+    const float size = juce::jmin (w, h);
+    const float radius = size * (size > 90.0f ? 0.40f : 0.36f);
+    const float cx = b.getX() + w * 0.5f;
+    const float cy = b.getY() + h * 0.40f;
+
+    const auto rp = s.getRotaryParameters();
+    const float pos = juce::jlimit (0.0f, 1.0f, live01);
+    const float ang = rp.startAngleRadians + pos * (rp.endAngleRadians - rp.startAngleRadians);
+    const float pr = radius * 0.90f;
+    const float px = cx + std::cos (ang - juce::MathConstants<float>::halfPi) * pr;
+    const float py = cy + std::sin (ang - juce::MathConstants<float>::halfPi) * pr;
+
+    g.setColour (Col::frame.withAlpha (0.55f));
+    g.fillEllipse (px - 3.4f, py - 3.4f, 6.8f, 6.8f);
+    g.setColour (Col::goldHi.withAlpha (0.95f));
+    g.fillEllipse (px - 2.2f, py - 2.2f, 4.4f, 4.4f);
+}
+
+void SlagblockAudioProcessorEditor::drawLiveSliderMarker (juce::Graphics& g, const juce::Slider& s, float live01) const
+{
+    if (! s.isVisible() || s.getWidth() < 8 || s.getHeight() < 8)
+        return;
+
+    const auto b = s.getBounds().toFloat();
+    const float pos = juce::jlimit (0.0f, 1.0f, live01);
+    const bool vert = s.isVertical();
+
+    if (vert)
+    {
+        const float x = b.getCentreX();
+        const float y = b.getBottom() - 8.0f - pos * juce::jmax (1.0f, b.getHeight() - 16.0f);
+        g.setColour (Col::goldHi.withAlpha (0.9f));
+        g.fillRoundedRectangle (x - 9.0f, y - 1.5f, 18.0f, 3.0f, 1.0f);
+    }
+    else
+    {
+        const float y = b.getCentreY();
+        const float x = b.getX() + 4.0f + pos * juce::jmax (1.0f, b.getWidth() - 8.0f);
+        g.setColour (Col::goldHi.withAlpha (0.9f));
+        g.fillEllipse (x - 3.0f, y - 3.0f, 6.0f, 6.0f);
+    }
+}
+
+void SlagblockAudioProcessorEditor::paintOverChildren (juce::Graphics& g)
+{
+    if (! proc.isAutoAudible())
+        return;
+
+    using P = SlagblockAudioProcessor;
+    struct Knob { const juce::Slider* s; const char* id; };
+    const Knob knobs[] = {
+        { &ratioKnob,    P::paramRatio },
+        { &indexKnob,    P::paramIndex },
+        { &driveKnob,    P::paramDrive },
+        { &feedbackKnob, P::paramFeedback },
+        { &subLevelKnob, P::paramSubLevel },
+        { &cutoffKnob,   P::paramCutoff },
+        { &resoKnob,     P::paramResonance },
+        { &noiseKnob,    P::paramNoise },
+        { &lfoRateKnob,  P::paramLfoRate },
+        { &lfoCutKnob,   P::paramLfoCutoff },
+        { &lfoIdxKnob,   P::paramLfoIndex },
+        { &lfoDrvKnob,   P::paramLfoDrive },
+        { &lfoAmpKnob,   P::paramLfoAmpDepth },
+        { &fxDist,       P::paramFxDist },
+        { &fxBits,       P::paramFxCrushBits },
+        { &fxRate,       P::paramFxCrushRate },
+        { &fxDly,        P::paramFxDelayTime },
+        { &fxDlyFb,      P::paramFxDelayFb },
+        { &fxDlyMix,     P::paramFxDelayMix },
+        { &fxCho,        P::paramFxChorusMix },
+        { &fxChoDep,     P::paramFxChorusDepth }
+    };
+
+    for (const auto& k : knobs)
+        drawLiveKnobMarker (g, *k.s, proc.getStoredParam01 (k.id));
+
+    struct Slide { const juce::Slider* s; const char* id; };
+    const Slide slides[] = {
+        { &imVol,   P::paramImVol },
+        { &imDrive, P::paramImDrive },
+        { &imTime,  P::paramImTime },
+        { &imFilt,  P::paramImFilt },
+        { &imCrush, P::paramImCrush },
+        { &imNoise, P::paramImNoise },
+        { &imWidth, P::paramImWidth }
+    };
+
+    for (const auto& sl : slides)
+        drawLiveSliderMarker (g, *sl.s, proc.getStoredParam01 (sl.id));
+}
+
+void SlagblockAudioProcessorEditor::layoutAutoCluster (juce::Rectangle<int> area)
+{
+    autoCluster = area;
+    auto r = area;
+
+    btnAuto.setBounds (r.removeFromLeft (72).withSizeKeepingCentre (72, 36));
+    r.removeFromLeft (8);
+
+    juce::Slider* knobs[] = { &autoSpeedKnob, &autoDepthKnob, &autoChaosKnob };
+    juce::Label*  labs[]  = { &autoSpeedLab,  &autoDepthLab,  &autoChaosLab };
+    const int colW = r.getWidth() / 3;
+    for (int i = 0; i < 3; ++i)
+    {
+        auto col = r.removeFromLeft (colW).reduced (2, 0);
+        labs[i]->setBounds (col.removeFromBottom (14));
+        knobs[i]->setBounds (col);
     }
 }
 
@@ -1102,17 +1391,22 @@ void SlagblockAudioProcessorEditor::resized()
         tagLabel.setBounds (left.removeFromTop (18));
 
         // Right: Save Load Undo Redo
-        auto right = h.removeFromRight (320);
+        auto right = h.removeFromRight (300);
         auto place = [&] (juce::TextButton& b, int w)
         {
             b.setBounds (right.removeFromRight (w).withHeight (30)
                              .withY (topBar.getY() + (Layout::topH - 30) / 2 + 4));
             right.removeFromRight (7);
         };
-        place (btnRedo, 62);
-        place (btnUndo, 62);
-        place (btnLoad, 62);
-        place (btnSave, 62);
+        place (btnRedo, 58);
+        place (btnUndo, 58);
+        place (btnLoad, 58);
+        place (btnSave, 58);
+
+        // Auto cluster: AUTO + Speed / Depth / Chaos
+        auto autoArea = h.removeFromRight (280).reduced (4, 2);
+        h.removeFromRight (8);
+        layoutAutoCluster (autoArea);
 
         // Center: preset in pill (drawn in paint)
         presetLabel.setBounds (h.withTrimmedTop (12).withTrimmedBottom (8));

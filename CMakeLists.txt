@@ -28,6 +28,7 @@ target_sources(Slagblock PRIVATE
     Source/engine/FMEngine.h
     Source/engine/NeuroFX.h
     Source/engine/ShaperImitation.h
+    Source/engine/ChaosMotion.h
 )
 
 target_include_directories(Slagblock PRIVATE Source)

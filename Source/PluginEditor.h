@@ -67,6 +67,8 @@ public:
 
     /** ComponentId "teal" → teal metal knobs; default bronze. */
     static constexpr const char* kTealKnobId = "teal";
+    /** ComponentId for the header Auto / Chaos toggle. */
+    static constexpr const char* kAutoBtnId = "auto";
 };
 
 //==============================================================================
@@ -78,10 +80,15 @@ public:
     ~SlagblockAudioProcessorEditor() override;
 
     void paint (juce::Graphics&) override;
+    void paintOverChildren (juce::Graphics&) override;
     void resized() override;
 
 private:
     void timerCallback() override;
+    void applyLiveVisuals();
+    void restoreStoredVisuals();
+    void layoutAutoCluster (juce::Rectangle<int> area);
+    bool isSliderDragged (const juce::Slider& s) const noexcept;
 
     void setupKnob (juce::Slider& s, juce::Label& lab, const juce::String& name, bool teal = false);
     void setupVFader (juce::Slider& s, juce::Label& lab, const juce::String& name);
@@ -109,6 +116,8 @@ private:
     void drawFilterCurve (juce::Graphics& g, juce::Rectangle<float> r);
     void drawHeader (juce::Graphics& g, juce::Rectangle<int> r);
     void drawFooter (juce::Graphics& g, juce::Rectangle<int> r);
+    void drawLiveKnobMarker (juce::Graphics& g, const juce::Slider& s, float live01) const;
+    void drawLiveSliderMarker (juce::Graphics& g, const juce::Slider& s, float live01) const;
 
     float readParam (const char* id, float fallback) const;
     void updateLfoRateEnabled();
@@ -160,11 +169,16 @@ private:
 
     juce::TextButton btnSave, btnLoad, btnUndo, btnRedo;
     juce::TextButton btnRandom, btnRandomFx, btnFx, btnShaper, btnRandomIm;
+    juce::TextButton btnAuto;
+
+    juce::Slider autoSpeedKnob, autoDepthKnob, autoChaosKnob;
+    juce::Label  autoSpeedLab, autoDepthLab, autoChaosLab;
 
     bool fxOn = false;
     bool imOn = false;
+    bool lastAutoAudible = false;
 
-    juce::Rectangle<int> topBar, bottomBar;
+    juce::Rectangle<int> topBar, bottomBar, autoCluster;
     juce::Rectangle<int> oscPanel, subPanel, filterPanel, envPanel, lfoPanel;
     juce::Rectangle<int> vizPanel, fxPanel, shaperPanel;
     juce::Rectangle<float> waveArea, spectrumArea, envShapeArea, filterCurveArea;
@@ -188,6 +202,8 @@ private:
     std::unique_ptr<SA> aFxDist, aFxBits, aFxRate, aFxDly, aFxDlyFb, aFxDlyMix, aFxCho, aFxChoDep;
     std::unique_ptr<SA> aImVol, aImDrive, aImTime, aImFilt, aImCrush, aImNoise, aImWidth;
     std::unique_ptr<BA> aImVolOn, aImDriveOn, aImTimeOn, aImFiltOn, aImCrushOn, aImNoiseOn, aImWidthOn;
+    std::unique_ptr<BA> aAutoOn;
+    std::unique_ptr<SA> aAutoSpeed, aAutoDepth, aAutoChaos;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SlagblockAudioProcessorEditor)
 };
