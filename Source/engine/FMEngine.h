@@ -8,7 +8,7 @@
 namespace slagblock
 {
 
-/** 2-op FM + independent Sub + LFO-modulated neuro bass engine. */
+/** 2-op FM + Osc 3 (mod / carrier / mix) + independent Sub + LFO-modulated neuro bass engine. */
 class FMEngine
 {
 public:
@@ -41,6 +41,13 @@ public:
     void setNoiseAmount (float n) noexcept { noiseAmount = std::clamp (n, 0.0f, 1.0f); }
 
     void setSubLevel (float level) noexcept { subLevel = std::clamp (level, 0.0f, 1.5f); }
+
+    void setOsc3Ratio (float r) noexcept { osc3Ratio = std::clamp (r, 0.25f, 16.0f); }
+    void setOsc3Index (float i) noexcept { osc3Index = std::clamp (i, 0.0f, 24.0f); }
+    void setOsc3Level (float l) noexcept { osc3Level = std::clamp (l, 0.0f, 1.5f); }
+    void setOsc3Wave  (int w) noexcept   { osc3Wave  = (w < 0) ? 0 : (w > 3 ? 3 : w); }
+    /** 0 = extra modulator, 1 = extra carrier, 2 = additive mix */
+    void setOsc3Role  (int r) noexcept   { osc3Role  = (r < 0) ? 0 : (r > 2 ? 2 : r); }
 
     /** 1 = one octave down, 2 = two octaves down */
     void setSubOctave (int octDown) noexcept
@@ -131,6 +138,7 @@ public:
         target->phaseC      = 0.0f;
         target->phaseM      = vel * 0.41f;
         target->phaseSub    = 0.0f;
+        target->phase3      = vel * 0.17f;
         target->modFb       = 0.0f;
     }
 
@@ -247,14 +255,46 @@ public:
             const float phaseIncC   = v.freq * invSampleRate;
             const float phaseIncM   = v.freq * ratio * invSampleRate;
             const float phaseIncSub = v.freq * subFreqMul * invSampleRate;
+            const float phaseInc3   = v.freq * osc3Ratio * invSampleRate;
 
             const float fbDepth = feedback * pi * 0.95f;
-            const float mod = std::sin (twoPi * v.phaseM + fbDepth * v.modFb);
+            const float o3      = evalWave (v.phase3, osc3Wave);
+            const float lvl3    = osc3Level;
+
+            // Osc 3 is gated by Level so Level=0 leaves the original 2-op sound untouched.
+            const bool osc3On = lvl3 > 1.0e-4f;
+            const float extraFm = (osc3On && osc3Role == 0) ? (osc3Index * lvl3 * o3) : 0.0f;
+            const float series3 = extraFm * 0.35f;
+
+            const float mod = std::sin (twoPi * v.phaseM + fbDepth * v.modFb + series3);
             v.modFb = mod;
+
+            float osc3Audio = 0.0f;
+            if (osc3On)
+            {
+                switch (osc3Role)
+                {
+                    case 0: // extra modulator — FM complexity plus a little dry presence
+                        osc3Audio = o3 * lvl3 * 0.10f;
+                        break;
+                    case 1: // extra carrier, FM'd by the main modulator
+                    {
+                        const float fmShift = (osc3Index * mod) * (1.0f / twoPi);
+                        osc3Audio = evalWave (v.phase3 + fmShift, osc3Wave) * lvl3 * 0.68f;
+                        break;
+                    }
+                    default: // additive mix, Index folds the wave
+                    {
+                        const float fold = 1.0f + osc3Index * 0.18f;
+                        osc3Audio = std::tanh (o3 * fold) * lvl3 * 0.68f;
+                        break;
+                    }
+                }
+            }
 
             // Main FM carrier (no fixed sub baked in)
             const float idx = std::max (0.0f, modIndex);
-            const float fm  = std::sin (twoPi * v.phaseC + idx * mod);
+            const float fm  = std::sin (twoPi * v.phaseC + idx * mod + extraFm);
             const float noise = nextNoise() * noiseAmount * 1.35f;
 
             // Independent Sub oscillator
@@ -263,6 +303,7 @@ public:
             float voiceOut = fm * 0.78f
                            + sub * (subLevel * 0.95f)
                            + mod * (0.08f * std::min (idx, 14.0f) / 14.0f)
+                           + osc3Audio
                            + noise;
 
             if (v.stage == EnvStage::Attack || (v.stage == EnvStage::Decay && v.env > 0.85f))
@@ -274,9 +315,11 @@ public:
             v.phaseC   += phaseIncC;
             v.phaseM   += phaseIncM;
             v.phaseSub += phaseIncSub;
+            v.phase3   += phaseInc3;
             v.phaseC   -= std::floor (v.phaseC);
             v.phaseM   -= std::floor (v.phaseM);
             v.phaseSub -= std::floor (v.phaseSub);
+            v.phase3   -= std::floor (v.phase3);
         }
 
         mix *= 0.48f;
@@ -304,8 +347,26 @@ private:
         float    phaseC      = 0.0f;
         float    phaseM      = 0.0f;
         float    phaseSub    = 0.0f;
+        float    phase3      = 0.0f;
         float    modFb       = 0.0f;
     };
+
+    static float evalWave (float phase, int wave) noexcept
+    {
+        phase -= std::floor (phase);
+
+        switch (wave)
+        {
+            case 1: // triangle
+                return 1.0f - 4.0f * std::abs (phase - 0.5f);
+            case 2: // saw
+                return 2.0f * phase - 1.0f;
+            case 3: // square
+                return phase < 0.5f ? 1.0f : -1.0f;
+            default:
+                return std::sin (twoPiApprox * phase);
+        }
+    }
 
     static float midiNoteToHz (int note) noexcept
     {
@@ -376,6 +437,13 @@ private:
     float subLevel      = 0.55f;
     int   subOctaveDown = 1;
     float subFreqMul    = 0.5f;
+
+    // Osc 3 / Operator 3
+    float osc3Ratio = 3.01f;
+    float osc3Index = 6.0f;
+    float osc3Level = 0.0f;
+    int   osc3Wave  = 0;
+    int   osc3Role  = 0;
 
     // LFO (amp destination handled in PluginProcessor post-FX)
     float lfoRateHz   = 0.45f;

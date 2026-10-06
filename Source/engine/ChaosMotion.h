@@ -51,6 +51,9 @@ public:
         ImCrush,
         ImNoise,
         ImWidth,
+        Osc3Ratio,
+        Osc3Index,
+        Osc3Level,
         Count
     };
 
@@ -99,6 +102,9 @@ public:
         bindOne (ImCrush,       "imCrush");
         bindOne (ImNoise,       "imNoise");
         bindOne (ImWidth,       "imWidth");
+        bindOne (Osc3Ratio,     "osc3Ratio");
+        bindOne (Osc3Index,     "osc3Index");
+        bindOne (Osc3Level,     "osc3Level");
     }
 
     void setControls (bool on, float speed01, float depth01, float chaos01) noexcept
@@ -343,7 +349,10 @@ private:
         0.84f, // ImFilt
         0.74f, // ImCrush
         0.62f, // ImNoise
-        0.72f  // ImWidth
+        0.72f, // ImWidth
+        0.70f, // Osc3Ratio
+        0.86f, // Osc3Index
+        0.68f  // Osc3Level
     };
 
     void initWalkers() noexcept
@@ -356,7 +365,8 @@ private:
             0x8B13C0D9u, 0x3A27E64Bu, 0xF1C02A88u, 0x59D7B403u,
             0xC29E17A6u, 0x0E84F5D2u, 0xA7B3901Cu, 0x41F6C8E5u,
             0xE20B4D73u, 0x76A1E29Fu, 0x9C58D014u, 0x25F3A8CBu,
-            0xD8916B3Eu, 0x4C07F9A2u, 0xB3E24D70u, 0x18A9C65Fu
+            0xD8916B3Eu, 0x4C07F9A2u, 0xB3E24D70u, 0x18A9C65Fu,
+            0x5E8C2A17u, 0xF4B07D91u, 0x2C6E19A3u
         };
 
         for (int i = 0; i < Count; ++i)

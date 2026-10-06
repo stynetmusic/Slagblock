@@ -24,6 +24,11 @@ SlagblockAudioProcessor::SlagblockAudioProcessor()
 
     subLevelParam  = apvts.getRawParameterValue (paramSubLevel);
     subOctaveParam = apvts.getRawParameterValue (paramSubOctave);
+    osc3RatioParam = apvts.getRawParameterValue (paramOsc3Ratio);
+    osc3IndexParam = apvts.getRawParameterValue (paramOsc3Index);
+    osc3LevelParam = apvts.getRawParameterValue (paramOsc3Level);
+    osc3WaveParam  = apvts.getRawParameterValue (paramOsc3Wave);
+    osc3RoleParam  = apvts.getRawParameterValue (paramOsc3Role);
     lfoRateParam     = apvts.getRawParameterValue (paramLfoRate);
     lfoSyncParam     = apvts.getRawParameterValue (paramLfoSync);
     lfoDivisionParam = apvts.getRawParameterValue (paramLfoDivision);
@@ -310,6 +315,34 @@ void SlagblockAudioProcessor::randomizeNeuroPatch()
 
     setParamFloat (paramSubLevel,  0.35f + rng.nextFloat() * 0.55f);
     setParamFloat (paramSubOctave, rng.nextFloat() > 0.55f ? 2.0f : 1.0f);
+
+    // Osc 3 — usually engaged so random patches get denser / metallic FM
+    {
+        static constexpr float o3bases[] = { 1.5f, 2.0f, 2.5f, 3.0f, 3.5f, 5.0f };
+        const float o3base = o3bases[static_cast<size_t> (rng.nextInt (6))];
+        const float o3micro = (rng.nextFloat() < 0.8f)
+                                  ? (0.01f + rng.nextFloat() * 0.08f)
+                                  : (-0.04f + rng.nextFloat() * 0.05f);
+        setParamFloat (paramOsc3Ratio, juce::jlimit (0.25f, 8.0f, o3base + o3micro));
+        setParamFloat (paramOsc3Index, 3.0f + rng.nextFloat() * 12.0f);
+        setParamFloat (paramOsc3Level, rng.nextFloat() > 0.18f ? (0.22f + rng.nextFloat() * 0.62f) : 0.0f);
+
+        auto setChoice = [this, &rng] (const char* id, int n, int prefer)
+        {
+            if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (apvts.getParameter (id)))
+            {
+                const int maxN = juce::jmax (1, n);
+                const int idx = (rng.nextFloat() > 0.35f)
+                                    ? juce::jlimit (0, maxN - 1, prefer)
+                                    : rng.nextInt (maxN);
+                choice->beginChangeGesture();
+                *choice = idx;
+                choice->endChangeGesture();
+            }
+        };
+        setChoice (paramOsc3Wave, 4, rng.nextInt (4));
+        setChoice (paramOsc3Role, 3, 0); // bias toward extra modulator
+    }
     setParamFloat (paramLfoRate,     0.08f + rng.nextFloat() * 2.5f);
     setParamBool  (paramLfoSync,     rng.nextFloat() > 0.4f);
     // Prefer musical divisions around 1/4 … 1/16
@@ -326,6 +359,16 @@ void SlagblockAudioProcessor::randomizeNeuroPatch()
     setParamFloat (paramLfoDrive,    rng.nextFloat() * 0.35f);
     setParamBool  (paramLfoToAmp,    rng.nextFloat() > 0.55f);
     setParamFloat (paramLfoAmpDepth, rng.nextFloat() * 0.45f);
+}
+
+juce::StringArray SlagblockAudioProcessor::getOsc3WaveNames()
+{
+    return { "Sine", "Tri", "Saw", "Square" };
+}
+
+juce::StringArray SlagblockAudioProcessor::getOsc3RoleNames()
+{
+    return { "Mod", "Carrier", "Mix" };
 }
 
 juce::StringArray SlagblockAudioProcessor::getLfoDivisionNames()
@@ -452,6 +495,21 @@ juce::AudioProcessorValueTreeState::ParameterLayout SlagblockAudioProcessor::cre
     // Sub oscillator (independent of FM carrier)
     addFloat (paramSubLevel, "Sub Level", juce::NormalisableRange<float> (0.0f, 1.2f, 0.001f), 0.55f);
     addFloat (paramSubOctave, "Sub Octave", juce::NormalisableRange<float> (1.0f, 2.0f, 1.0f), 1.0f); // 1=-1, 2=-2
+
+    // Osc 3 / Operator 3 — default Level=0 keeps existing 2-op patches unchanged
+    addFloat (paramOsc3Ratio, "Osc 3 Ratio", juce::NormalisableRange<float> (0.25f, 8.0f, 0.01f, 0.5f), 3.01f);
+    addFloat (paramOsc3Index, "Osc 3 Index", juce::NormalisableRange<float> (0.0f, 20.0f, 0.01f), 6.0f);
+    addFloat (paramOsc3Level, "Osc 3 Level", juce::NormalisableRange<float> (0.0f, 1.2f, 0.001f), 0.0f);
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { paramOsc3Wave, 1 },
+        "Osc 3 Wave",
+        getOsc3WaveNames(),
+        0)); // Sine
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { paramOsc3Role, 1 },
+        "Osc 3 Role",
+        getOsc3RoleNames(),
+        0)); // Mod
 
     // LFO → destinations + tempo grid
     addFloat (paramLfoRate, "LFO Rate", juce::NormalisableRange<float> (0.05f, 20.0f, 0.001f, 0.35f), 0.45f);
@@ -615,6 +673,26 @@ void SlagblockAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
 
     engine.setSubLevel  (live (CM::SubLevel, subLevelParam, 0.55f));
     engine.setSubOctave (subOctaveParam != nullptr ? static_cast<int> (subOctaveParam->load() + 0.5f) : 1);
+
+    engine.setOsc3Ratio (live (CM::Osc3Ratio, osc3RatioParam, 3.01f));
+    engine.setOsc3Index (live (CM::Osc3Index, osc3IndexParam, 6.0f));
+    engine.setOsc3Level (live (CM::Osc3Level, osc3LevelParam, 0.0f));
+    {
+        int waveIdx = 0;
+        int roleIdx = 0;
+        if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (apvts.getParameter (paramOsc3Wave)))
+            waveIdx = p->getIndex();
+        else if (osc3WaveParam != nullptr)
+            waveIdx = juce::jlimit (0, 3, static_cast<int> (osc3WaveParam->load() + 0.5f));
+
+        if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (apvts.getParameter (paramOsc3Role)))
+            roleIdx = p->getIndex();
+        else if (osc3RoleParam != nullptr)
+            roleIdx = juce::jlimit (0, 2, static_cast<int> (osc3RoleParam->load() + 0.5f));
+
+        engine.setOsc3Wave (waveIdx);
+        engine.setOsc3Role (roleIdx);
+    }
     // LFO rate: free Hz or host-tempo musical grid.
     // Auto drives the free-rate path so the LFO itself wanders.
     {

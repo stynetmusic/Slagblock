@@ -138,6 +138,12 @@ private:
     juce::Slider subLevelKnob, subOctaveKnob;
     juce::Label  subLevelLab, subOctaveLab;
 
+    // Osc 3 / Operator 3
+    juce::Slider osc3RatioKnob, osc3IndexKnob, osc3LevelKnob;
+    juce::Label  osc3RatioLab, osc3IndexLab, osc3LevelLab;
+    juce::Label  osc3WaveLab, osc3RoleLab;
+    juce::ComboBox osc3WaveBox, osc3RoleBox;
+
     // Filter — large teal cutoff
     juce::Slider cutoffKnob, resoKnob, noiseKnob;
     juce::Label  cutoffLab, resoLab, noiseLab;
@@ -164,8 +170,8 @@ private:
     juce::Label  imVolLab, imDriveLab, imTimeLab, imFiltLab, imCrushLab, imNoiseLab, imWidthLab;
 
     juce::Label logoLabel, tagLabel, presetLabel;
-    juce::Label oscTitle, subTitle, filterTitle, envTitle, lfoTitle, fxTitle, shaperTitle, vizTitle;
-    juce::Label oscBadge, subBadge, filterBadge, envBadge, lfoBadge, fxBadge, shaperBadge, vizBadge;
+    juce::Label oscTitle, osc3Title, subTitle, filterTitle, envTitle, lfoTitle, fxTitle, shaperTitle, vizTitle;
+    juce::Label oscBadge, osc3Badge, subBadge, filterBadge, envBadge, lfoBadge, fxBadge, shaperBadge, vizBadge;
 
     juce::TextButton btnSave, btnLoad, btnUndo, btnRedo;
     juce::TextButton btnRandom, btnRandomFx, btnFx, btnShaper, btnRandomIm;
@@ -179,7 +185,7 @@ private:
     bool lastAutoAudible = false;
 
     juce::Rectangle<int> topBar, bottomBar, autoCluster;
-    juce::Rectangle<int> oscPanel, subPanel, filterPanel, envPanel, lfoPanel;
+    juce::Rectangle<int> oscPanel, osc3Panel, subPanel, filterPanel, envPanel, lfoPanel;
     juce::Rectangle<int> vizPanel, fxPanel, shaperPanel;
     juce::Rectangle<float> waveArea, spectrumArea, envShapeArea, filterCurveArea;
 
@@ -196,6 +202,8 @@ private:
     std::unique_ptr<SA> aCut, aReso, aNoise;
     std::unique_ptr<SA> aAtt, aDec, aSus, aRel;
     std::unique_ptr<SA> aSubLvl, aSubOct;
+    std::unique_ptr<SA> aOsc3Ratio, aOsc3Index, aOsc3Level;
+    std::unique_ptr<CA> aOsc3Wave, aOsc3Role;
     std::unique_ptr<SA> aLfoRate, aLfoCut, aLfoIdx, aLfoDrv, aLfoAmp;
     std::unique_ptr<BA> aLfoSync, aLfoToAmp;
     std::unique_ptr<CA> aLfoGrid;

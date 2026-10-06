@@ -30,7 +30,7 @@ namespace Col
 namespace Layout
 {
     constexpr int W = 1280;
-    constexpr int H = 780;
+    constexpr int H = 860;
     constexpr int pad = 12;
     constexpr int gap = 10;
     constexpr int topH = 96;
@@ -373,6 +373,7 @@ SlagblockAudioProcessorEditor::SlagblockAudioProcessorEditor (SlagblockAudioProc
     addAndMakeVisible (presetLabel);
 
     setupSectionTitle (oscTitle,    "FM OSCILLATOR");
+    setupSectionTitle (osc3Title,   "OSC 3");
     setupSectionTitle (subTitle,    "SUB OSCILLATOR");
     setupSectionTitle (filterTitle, "FILTER");
     setupSectionTitle (envTitle,    "AMP ENV");
@@ -382,6 +383,7 @@ SlagblockAudioProcessorEditor::SlagblockAudioProcessorEditor (SlagblockAudioProc
     setupSectionTitle (vizTitle,    "VISUALIZATION");
 
     setupBadge (oscBadge,    "OSC");
+    setupBadge (osc3Badge,   "OP3");
     setupBadge (subBadge,    "SUB");
     setupBadge (filterBadge, "FLT");
     setupBadge (envBadge,    "ADSR");
@@ -433,6 +435,25 @@ SlagblockAudioProcessorEditor::SlagblockAudioProcessorEditor (SlagblockAudioProc
     setupKnob (feedbackKnob, feedbackLab, "Feedback");
     setupKnob (subLevelKnob,  subLevelLab,  "Level");
     setupKnob (subOctaveKnob, subOctaveLab, "Octave");
+    setupKnob (osc3RatioKnob, osc3RatioLab, "Ratio");
+    setupKnob (osc3IndexKnob, osc3IndexLab, "Index");
+    setupKnob (osc3LevelKnob, osc3LevelLab, "Level");
+    osc3WaveLab.setText ("Wave", juce::dontSendNotification);
+    osc3WaveLab.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+    osc3WaveLab.setColour (juce::Label::textColourId, Col::textMute);
+    osc3WaveLab.setJustificationType (juce::Justification::centred);
+    addAndMakeVisible (osc3WaveLab);
+    osc3RoleLab.setText ("Role", juce::dontSendNotification);
+    osc3RoleLab.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+    osc3RoleLab.setColour (juce::Label::textColourId, Col::textMute);
+    osc3RoleLab.setJustificationType (juce::Justification::centred);
+    addAndMakeVisible (osc3RoleLab);
+    osc3WaveBox.addItemList (SlagblockAudioProcessor::getOsc3WaveNames(), 1);
+    osc3WaveBox.setJustificationType (juce::Justification::centred);
+    addAndMakeVisible (osc3WaveBox);
+    osc3RoleBox.addItemList (SlagblockAudioProcessor::getOsc3RoleNames(), 1);
+    osc3RoleBox.setJustificationType (juce::Justification::centred);
+    addAndMakeVisible (osc3RoleBox);
 
     // Teal knobs for filter (like PHASEDYN Cutoff/Res)
     setupKnob (cutoffKnob, cutoffLab, "Cutoff", true);
@@ -502,6 +523,11 @@ SlagblockAudioProcessorEditor::SlagblockAudioProcessorEditor (SlagblockAudioProc
     aRel      = std::make_unique<SA> (ap, P::paramRelease, releaseFader);
     aSubLvl   = std::make_unique<SA> (ap, P::paramSubLevel, subLevelKnob);
     aSubOct   = std::make_unique<SA> (ap, P::paramSubOctave, subOctaveKnob);
+    aOsc3Ratio = std::make_unique<SA> (ap, P::paramOsc3Ratio, osc3RatioKnob);
+    aOsc3Index = std::make_unique<SA> (ap, P::paramOsc3Index, osc3IndexKnob);
+    aOsc3Level = std::make_unique<SA> (ap, P::paramOsc3Level, osc3LevelKnob);
+    aOsc3Wave  = std::make_unique<CA> (ap, P::paramOsc3Wave,  osc3WaveBox);
+    aOsc3Role  = std::make_unique<CA> (ap, P::paramOsc3Role,  osc3RoleBox);
     aLfoRate  = std::make_unique<SA> (ap, P::paramLfoRate, lfoRateKnob);
     aLfoSync  = std::make_unique<BA> (ap, P::paramLfoSync, lfoSyncBtn);
     aLfoGrid  = std::make_unique<CA> (ap, P::paramLfoDivision, lfoGridBox);
@@ -556,7 +582,7 @@ SlagblockAudioProcessorEditor::SlagblockAudioProcessorEditor (SlagblockAudioProc
     startTimerHz (40);
     setSize (Layout::W, Layout::H);
     setResizable (true, true);
-    setResizeLimits (1100, 700, 1700, 1000);
+    setResizeLimits (1100, 740, 1700, 1120);
 }
 
 SlagblockAudioProcessorEditor::~SlagblockAudioProcessorEditor()
@@ -605,6 +631,7 @@ void SlagblockAudioProcessorEditor::timerCallback()
         if (! autoCluster.isEmpty())
             repaint (autoCluster.expanded (12));
         repaint (oscPanel);
+        repaint (osc3Panel);
         repaint (filterPanel);
         repaint (fxPanel);
         repaint (lfoPanel);
@@ -731,6 +758,9 @@ void SlagblockAudioProcessorEditor::applyLiveVisuals()
         { &driveKnob,    P::paramDrive },
         { &feedbackKnob, P::paramFeedback },
         { &subLevelKnob, P::paramSubLevel },
+        { &osc3RatioKnob, P::paramOsc3Ratio },
+        { &osc3IndexKnob, P::paramOsc3Index },
+        { &osc3LevelKnob, P::paramOsc3Level },
         { &cutoffKnob,   P::paramCutoff },
         { &resoKnob,     P::paramResonance },
         { &noiseKnob,    P::paramNoise },
@@ -785,6 +815,9 @@ void SlagblockAudioProcessorEditor::restoreStoredVisuals()
         { &driveKnob,    P::paramDrive },
         { &feedbackKnob, P::paramFeedback },
         { &subLevelKnob, P::paramSubLevel },
+        { &osc3RatioKnob, P::paramOsc3Ratio },
+        { &osc3IndexKnob, P::paramOsc3Index },
+        { &osc3LevelKnob, P::paramOsc3Level },
         { &cutoffKnob,   P::paramCutoff },
         { &resoKnob,     P::paramResonance },
         { &noiseKnob,    P::paramNoise },
@@ -1011,6 +1044,9 @@ void SlagblockAudioProcessorEditor::drawWaveform (juce::Graphics& g, juce::Recta
     const float fdbk  = readParam (P::paramFeedback, 0.55f);
     const float sub   = readParam (P::paramSubLevel, 0.55f);
     const float drive = readParam (P::paramDrive, 0.5f);
+    const float o3lvl = readParam (P::paramOsc3Level, 0.0f);
+    const float o3rat = readParam (P::paramOsc3Ratio, 3.01f);
+    const float o3idx = readParam (P::paramOsc3Index, 6.0f);
 
     juce::Path wave;
     const int N = juce::jmax (80, (int) r.getWidth());
@@ -1024,10 +1060,11 @@ void SlagblockAudioProcessorEditor::drawWaveform (juce::Graphics& g, juce::Recta
         const float ph = t * juce::MathConstants<float>::twoPi * 2.5f + phase;
         const float mod = std::sin (ph * ratio + prev * fdbk * 0.95f);
         prev = mod;
-        float fm = std::sin (ph + index * 0.12f * mod);
+        const float o3w = std::sin (ph * o3rat);
+        float fm = std::sin (ph + index * 0.12f * mod + o3idx * 0.08f * o3lvl * o3w);
         fm = std::tanh (fm * (1.0f + drive * 1.6f));
         const float subW = std::sin (ph * 0.5f) * sub * 0.4f;
-        const float y = midY - (fm * 0.7f + subW) * amp;
+        const float y = midY - (fm * 0.7f + subW + o3w * o3lvl * 0.28f) * amp;
         const float x = r.getX() + 6.0f + t * (r.getWidth() - 12.0f);
         if (i == 0) wave.startNewSubPath (x, y);
         else wave.lineTo (x, y);
@@ -1210,6 +1247,7 @@ void SlagblockAudioProcessorEditor::paint (juce::Graphics& g)
     const bool autoLive = proc.isAutoAudible();
 
     drawPanel (g, oscPanel.toFloat());
+    drawPanel (g, osc3Panel.toFloat());
     drawPanel (g, subPanel.toFloat());
     drawPanel (g, filterPanel.toFloat());
     drawPanel (g, envPanel.toFloat());
@@ -1227,7 +1265,7 @@ void SlagblockAudioProcessorEditor::paint (juce::Graphics& g)
         g.setColour (Col::borderHi.withAlpha (0.35f));
         g.drawRoundedRectangle (br, 5.0f, 0.8f);
     };
-    paintBadge (oscBadge); paintBadge (subBadge); paintBadge (filterBadge);
+    paintBadge (oscBadge); paintBadge (osc3Badge); paintBadge (subBadge); paintBadge (filterBadge);
     paintBadge (envBadge); paintBadge (lfoBadge); paintBadge (fxBadge);
     paintBadge (shaperBadge); paintBadge (vizBadge);
 
@@ -1322,6 +1360,9 @@ void SlagblockAudioProcessorEditor::paintOverChildren (juce::Graphics& g)
         { &driveKnob,    P::paramDrive },
         { &feedbackKnob, P::paramFeedback },
         { &subLevelKnob, P::paramSubLevel },
+        { &osc3RatioKnob, P::paramOsc3Ratio },
+        { &osc3IndexKnob, P::paramOsc3Index },
+        { &osc3LevelKnob, P::paramOsc3Level },
         { &cutoffKnob,   P::paramCutoff },
         { &resoKnob,     P::paramResonance },
         { &noiseKnob,    P::paramNoise },
@@ -1447,10 +1488,14 @@ void SlagblockAudioProcessorEditor::resized()
     bounds.removeFromLeft (g);
     auto rightCol  = bounds;
 
-    // Left: OSC top ~58% / SUB bottom
+    // Left: FM OSC / OSC 3 / SUB
     {
-        const int oscH = (leftCol.getHeight() - g) * 58 / 100;
+        const int innerH = leftCol.getHeight() - g * 2;
+        const int oscH  = innerH * 42 / 100;
+        const int osc3H = innerH * 34 / 100;
         oscPanel = leftCol.removeFromTop (oscH);
+        leftCol.removeFromTop (g);
+        osc3Panel = leftCol.removeFromTop (osc3H);
         leftCol.removeFromTop (g);
         subPanel = leftCol;
     }
@@ -1504,6 +1549,26 @@ void SlagblockAudioProcessorEditor::resized()
         {
             layoutKnobRow (a, k, l, 4);
         }
+    }
+
+    // OSC 3 / OPERATOR 3
+    {
+        auto a = body (osc3Panel);
+        head (a, osc3Title, osc3Badge);
+
+        auto bottom = a.removeFromBottom (28);
+        const int half = bottom.getWidth() / 2;
+        auto waveCol = bottom.removeFromLeft (half).reduced (2, 0);
+        auto roleCol = bottom.reduced (2, 0);
+        osc3WaveLab.setBounds (waveCol.removeFromLeft (40));
+        osc3WaveBox.setBounds (waveCol.reduced (0, 2));
+        osc3RoleLab.setBounds (roleCol.removeFromLeft (40));
+        osc3RoleBox.setBounds (roleCol.reduced (0, 2));
+        a.removeFromBottom (4);
+
+        juce::Slider* k[] = { &osc3RatioKnob, &osc3IndexKnob, &osc3LevelKnob };
+        juce::Label*  l[] = { &osc3RatioLab,  &osc3IndexLab,  &osc3LevelLab };
+        layoutKnobRow (a, k, l, 3);
     }
 
     // SUB

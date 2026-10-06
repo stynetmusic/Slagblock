@@ -96,6 +96,15 @@ public:
     static constexpr const char* paramSubLevel  = "subLevel";
     static constexpr const char* paramSubOctave = "subOctave";
 
+    static constexpr const char* paramOsc3Ratio = "osc3Ratio";
+    static constexpr const char* paramOsc3Index = "osc3Index";
+    static constexpr const char* paramOsc3Level = "osc3Level";
+    static constexpr const char* paramOsc3Wave  = "osc3Wave";
+    static constexpr const char* paramOsc3Role  = "osc3Role";
+
+    static juce::StringArray getOsc3WaveNames();
+    static juce::StringArray getOsc3RoleNames();
+
     static constexpr const char* paramLfoRate     = "lfoRate";
     static constexpr const char* paramLfoSync     = "lfoSync";      // tempo sync on/off
     static constexpr const char* paramLfoDivision = "lfoDivision";  // note grid when synced
@@ -179,6 +188,11 @@ private:
 
     std::atomic<float>* subLevelParam  = nullptr;
     std::atomic<float>* subOctaveParam = nullptr;
+    std::atomic<float>* osc3RatioParam = nullptr;
+    std::atomic<float>* osc3IndexParam = nullptr;
+    std::atomic<float>* osc3LevelParam = nullptr;
+    std::atomic<float>* osc3WaveParam  = nullptr;
+    std::atomic<float>* osc3RoleParam  = nullptr;
     std::atomic<float>* lfoRateParam     = nullptr;
     std::atomic<float>* lfoSyncParam     = nullptr;
     std::atomic<float>* lfoDivisionParam = nullptr;
